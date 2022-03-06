@@ -4,26 +4,75 @@ using UnityEngine;
 
 public class GameManager : MonoBehaviour
 {
-    // Start is called before the first frame update
 
-    private List<GameObject> targets;
+    enum GameState
+    {
+        INTRO,
+        REPORT,
+        READY,
+        WAIT_FOR_HIT,
+        POST_HIT
+        // other enums mean that a target is on and waiting to be hit
+    }
 
+
+    // GAME CONSTANTS
     private const float minTimeBetweenStateChangesSec = 0.5f;
     private const float maxTimeBetweenStateChangesSec = 1.5f;
 
-    private int state = -1;
-    private float timeUntilNextStateChange;
+    private const float introLength = 3f;
+    private const float reportLength = 5f;
+    private const float targetActivationTimeout = 3f;
+    private const float postHitTime = 0.5f;
 
+    private const int totalTargetsToHit = 5;
+    private const float maxGameDuration = 60f;
 
+    // GAME VARIABLES
+    private bool readyForUpdate = true;
+    private GameState state = GameState.INTRO;
+    private int activeTarget = 0;
+
+    private int numTargetsHit = 0;
+    private float targetActivationTime;
+    private float averageReactionTime = 0f;
+
+    // GAME OBJECTS
     public AudioClip audioClipSuccess;
+    public AudioClip audioClipStart;
     private AudioSource audioSource;
+    
+    private List<GameObject> targets;
+
+    private APlausEMRInstructionsDisplay instructionDisplay;
+
+
+    
+
 
     void Start()
     {
+        FindTargets();
+        UpdateTargets();
+
+        audioSource = GetComponent<AudioSource>();
+
+        // Set user position
+        OVRManager.display.RecenterPose();
+
+
+        // limit frame rate to 72
+        QualitySettings.vSyncCount = 0;
+        Application.targetFrameRate = 72;
+
+        instructionDisplay = GameObject.Find("Instructions").GetComponent<APlausEMRInstructionsDisplay>();
+
+    }
+
+    public void FindTargets()
+    {
         targets = new List<GameObject>();
-
         GameObject targetRoot = gameObject.transform.GetChild(0).gameObject;
-
         for (int i = 0; i < targetRoot.transform.childCount; i++)
         {
             GameObject child = targetRoot.transform.GetChild(i).gameObject;
@@ -32,17 +81,51 @@ public class GameManager : MonoBehaviour
                 targets.Add(child);
             }
         }
-
         Debug.Log("Found " + targets.Count + " targets");
+    }
 
-        timeUntilNextStateChange = Random.Range(minTimeBetweenStateChangesSec, maxTimeBetweenStateChangesSec);
+    IEnumerator ShowIntro()
+    {
+        state = GameState.INTRO;
 
-        audioSource = GetComponent<AudioSource>();
+        instructionDisplay.ShowInstructions("Touch the targets as fast as you can, using either controller.");
+        yield return new WaitForSeconds(introLength);
+        instructionDisplay.HideInstructions();
+
+        audioSource.PlayOneShot(audioClipStart);
+
+        instructionDisplay.ShowInstructions("Game starting now...");
+        yield return new WaitForSeconds(introLength);
+        instructionDisplay.HideInstructions();
+
+        state = GameState.READY;
+
+        readyForUpdate = true;
+    }
+
+    IEnumerator ShowReport()
+    {
+        state = GameState.REPORT;
+
+        instructionDisplay.ShowInstructions("Number of targets hit: \n" + numTargetsHit + "\nAverage reaction time:\n" + averageReactionTime + " seconds");
+        yield return new WaitForSeconds(reportLength);
+        instructionDisplay.HideInstructions();
+
+        // quit game
+#if UNITY_EDITOR
+        UnityEditor.EditorApplication.isPlaying = false;
+#else
+        Application.Quit();
+#endif
+
     }
 
     // Update is called once per frame
     void Update()
     {
+
+        //Debug.Log("First update");
+
         // update targets
         // target state: 
         // -1: nothing is on
@@ -53,51 +136,114 @@ public class GameManager : MonoBehaviour
 
         // also check for collisions here
 
-        timeUntilNextStateChange -= Time.deltaTime;
+        if (readyForUpdate)
+        {
+            readyForUpdate = false;
 
+            switch (state)
+            {
+                case GameState.INTRO:
+                    StartCoroutine(ShowIntro());
+                    break;
+                case GameState.REPORT:
+                    StartCoroutine(ShowReport());
+                    break;
+                case GameState.READY:
+                    StartCoroutine(ActivateNewTarget());
+                    break;
+                case GameState.WAIT_FOR_HIT:
+                    StartCoroutine(WaitForHit());
+                    break;
+                case GameState.POST_HIT:
+                    StartCoroutine(PostHit());
+                    break;
+                default:
+                    break;
+            }
+        }
 
+    }
+
+    IEnumerator WaitForHit()
+    {
         bool correctCollisionDetected = false;
 
-        if (state > -1)
-        {
-            correctCollisionDetected = targets[state].transform.Find("TargetArea").GetComponent<TargetCollisions>().wasCollisionDetected();
+        float timeSinceActivation = Time.realtimeSinceStartup - targetActivationTime;
 
-            if (correctCollisionDetected)
-            {
-                audioSource.PlayOneShot(audioClipSuccess);
-                Debug.Log("Correct Collision!");
-            }
+        while (!correctCollisionDetected && timeSinceActivation < targetActivationTimeout)
+        {
+
+            correctCollisionDetected = targets[activeTarget].transform.Find("TargetArea").GetComponent<TargetCollisions>().wasCollisionDetected();
+            timeSinceActivation = Time.realtimeSinceStartup - targetActivationTime;
+
+            yield return null;
+            
         }
 
-        if (correctCollisionDetected || timeUntilNextStateChange < 0f)
+        if (correctCollisionDetected)
         {
-            // if nothing was on, determine which target should be turned on 
-            if (state == -1)
+            audioSource.PlayOneShot(audioClipSuccess);
+            ++numTargetsHit;
+
+            averageReactionTime = (averageReactionTime * (numTargetsHit - 1) + timeSinceActivation) / numTargetsHit;
+
+            if (numTargetsHit >= totalTargetsToHit)
             {
-                state = Random.Range(0, targets.Count);
-            }
+                state = GameState.REPORT;
+            } 
             else
             {
-                state = -1;
+                state = GameState.POST_HIT;
             }
-
-            timeUntilNextStateChange = Random.Range(minTimeBetweenStateChangesSec, maxTimeBetweenStateChangesSec);
-
-            UpdateTargets();
         }
+        else
+        {
+            state = GameState.READY;
+        }
+        UpdateTargets();
+
+        readyForUpdate = true;
     }
+
+    IEnumerator ActivateNewTarget()
+    {
+        float timeToWait = Random.Range(minTimeBetweenStateChangesSec, maxTimeBetweenStateChangesSec);
+        yield return new WaitForSeconds(timeToWait);
+
+
+        activeTarget = Random.Range(0, targets.Count);
+        state = GameState.WAIT_FOR_HIT;
+        UpdateTargets();
+
+        targetActivationTime = Time.realtimeSinceStartup;
+
+        readyForUpdate = true;
+    }
+
+    IEnumerator PostHit()
+    {
+        yield return new WaitForSeconds(postHitTime);
+        state = GameState.READY;
+        UpdateTargets();
+        readyForUpdate = true;
+    }
+
     private void UpdateTargets()
     {
-        if (state == -1)
+        if (state <= GameState.READY)
         {
             foreach (var target in targets)
             {
                 target.transform.Find("TargetGeometry").GetComponent<Renderer>().material.SetColor("_Color", Color.gray);
             }
         }
-        else
+        else if (state == GameState.WAIT_FOR_HIT)
         {
-            targets[state].transform.Find("TargetGeometry").GetComponent<Renderer>().material.SetColor("_Color", Color.red);
+            targets[activeTarget].transform.Find("TargetGeometry").GetComponent<Renderer>().material.SetColor("_Color", Color.red);
+        }
+        else if (state == GameState.POST_HIT)
+        {
+            targets[activeTarget].transform.Find("TargetGeometry").GetComponent<Renderer>().material.SetColor("_Color", Color.white);
         }
     }
 
