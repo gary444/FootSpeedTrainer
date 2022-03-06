@@ -12,7 +12,6 @@ public class GameManager : MonoBehaviour
         READY,
         WAIT_FOR_HIT,
         POST_HIT
-        // other enums mean that a target is on and waiting to be hit
     }
 
 
@@ -26,10 +25,8 @@ public class GameManager : MonoBehaviour
     private const float postHitTime = 0.5f;
 
     private const int totalTargetsToHit = 5;
-    private const float maxGameDuration = 60f;
 
     // GAME VARIABLES
-    private bool readyForUpdate = true;
     private GameState state = GameState.INTRO;
     private int activeTarget = 0;
 
@@ -66,6 +63,13 @@ public class GameManager : MonoBehaviour
         Application.targetFrameRate = 72;
 
         instructionDisplay = GameObject.Find("Instructions").GetComponent<APlausEMRInstructionsDisplay>();
+        
+        StartCoroutine(ShowIntro());
+
+    }
+
+    void Update()
+    {
 
     }
 
@@ -100,7 +104,8 @@ public class GameManager : MonoBehaviour
 
         state = GameState.READY;
 
-        readyForUpdate = true;
+        StartCoroutine(ActivateNewTarget());
+
     }
 
     IEnumerator ShowReport()
@@ -120,49 +125,6 @@ public class GameManager : MonoBehaviour
 
     }
 
-    // Update is called once per frame
-    void Update()
-    {
-
-        //Debug.Log("First update");
-
-        // update targets
-        // target state: 
-        // -1: nothing is on
-        // >= 0: indexed target is on
-
-        // time until next state change - set when state changes and subject on each frame
-        // when time until next state change < 0, change state
-
-        // also check for collisions here
-
-        if (readyForUpdate)
-        {
-            readyForUpdate = false;
-
-            switch (state)
-            {
-                case GameState.INTRO:
-                    StartCoroutine(ShowIntro());
-                    break;
-                case GameState.REPORT:
-                    StartCoroutine(ShowReport());
-                    break;
-                case GameState.READY:
-                    StartCoroutine(ActivateNewTarget());
-                    break;
-                case GameState.WAIT_FOR_HIT:
-                    StartCoroutine(WaitForHit());
-                    break;
-                case GameState.POST_HIT:
-                    StartCoroutine(PostHit());
-                    break;
-                default:
-                    break;
-            }
-        }
-
-    }
 
     IEnumerator WaitForHit()
     {
@@ -190,10 +152,12 @@ public class GameManager : MonoBehaviour
             if (numTargetsHit >= totalTargetsToHit)
             {
                 state = GameState.REPORT;
-            } 
+                StartCoroutine(ShowReport());
+            }
             else
             {
                 state = GameState.POST_HIT;
+                StartCoroutine(PostHit());
             }
         }
         else
@@ -202,7 +166,6 @@ public class GameManager : MonoBehaviour
         }
         UpdateTargets();
 
-        readyForUpdate = true;
     }
 
     IEnumerator ActivateNewTarget()
@@ -217,7 +180,8 @@ public class GameManager : MonoBehaviour
 
         targetActivationTime = Time.realtimeSinceStartup;
 
-        readyForUpdate = true;
+        StartCoroutine(WaitForHit());
+
     }
 
     IEnumerator PostHit()
@@ -225,7 +189,9 @@ public class GameManager : MonoBehaviour
         yield return new WaitForSeconds(postHitTime);
         state = GameState.READY;
         UpdateTargets();
-        readyForUpdate = true;
+
+        StartCoroutine(ActivateNewTarget());
+
     }
 
     private void UpdateTargets()
