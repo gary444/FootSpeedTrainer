@@ -134,7 +134,6 @@ public class GameManager : MonoBehaviour
 
         while (!correctCollisionDetected && timeSinceActivation < targetActivationTimeout)
         {
-
             correctCollisionDetected = targets[activeTarget].transform.Find("TargetArea").GetComponent<TargetCollisions>().wasCollisionDetected();
             timeSinceActivation = Time.realtimeSinceStartup - targetActivationTime;
 
@@ -144,6 +143,10 @@ public class GameManager : MonoBehaviour
 
         if (correctCollisionDetected)
         {
+            Debug.Log("Collision with target " + activeTarget);
+
+
+
             audioSource.PlayOneShot(audioClipSuccess);
             ++numTargetsHit;
 
@@ -163,7 +166,11 @@ public class GameManager : MonoBehaviour
         else
         {
             state = GameState.READY;
+            StartCoroutine(ActivateNewTarget());
         }
+
+        //targets[activeTarget].transform.Find("TargetArea").GetComponent<TargetCollisions>().isActive = false;
+
         UpdateTargets();
 
     }
@@ -175,6 +182,9 @@ public class GameManager : MonoBehaviour
 
 
         activeTarget = Random.Range(0, targets.Count);
+
+        Debug.Log("Activated target: " + activeTarget);
+
         state = GameState.WAIT_FOR_HIT;
         UpdateTargets();
 
@@ -201,15 +211,19 @@ public class GameManager : MonoBehaviour
             foreach (var target in targets)
             {
                 target.transform.Find("TargetGeometry").GetComponent<Renderer>().material.SetColor("_Color", Color.gray);
+                target.transform.Find("TargetArea").GetComponent<TargetCollisions>().isActive = false;
+
             }
         }
         else if (state == GameState.WAIT_FOR_HIT)
         {
             targets[activeTarget].transform.Find("TargetGeometry").GetComponent<Renderer>().material.SetColor("_Color", Color.red);
+            targets[activeTarget].transform.Find("TargetArea").GetComponent<TargetCollisions>().isActive = true;
         }
         else if (state == GameState.POST_HIT)
         {
             targets[activeTarget].transform.Find("TargetGeometry").GetComponent<Renderer>().material.SetColor("_Color", Color.white);
+            targets[activeTarget].transform.Find("TargetArea").GetComponent<TargetCollisions>().isActive = false;
         }
     }
 

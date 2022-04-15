@@ -5,6 +5,7 @@ using UnityEngine;
 public class TargetCollisions : MonoBehaviour
 {
     public bool collisionDetected = false;
+    public bool isActive = false;
 
     public bool wasCollisionDetected()
     {
@@ -17,7 +18,7 @@ public class TargetCollisions : MonoBehaviour
     {
         Debug.Log("collision enter: " + collision.gameObject.name);
 
-        if (collision.gameObject.name.Contains("Controller"))
+        if (isActive && collision.gameObject.name.Contains("Controller"))
         {
             collisionDetected = true;
         }
